@@ -1,0 +1,48 @@
+[gd_scene load_steps=2 format=3 uid="uid://dylcby2lue15w"]
+
+[ext_resource type="Script" path="res://extractor.gd" id="1_mmien"]
+
+[node name="Extractor" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_mmien")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="PickDirectory" type="Button" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Select Data Dir..."
+
+[node name="SelectedDirectory" type="Label" parent="VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text_overrun_behavior = 3
+
+[node name="Process" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Process"
+
+[node name="LoggingPanel" type="PanelContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="LoggingLabel" type="RichTextLabel" parent="VBoxContainer/LoggingPanel"]
+layout_mode = 2
+scroll_following = true
+
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/PickDirectory" to="." method="_on_pick_directory_pressed"]
+[connection signal="pressed" from="VBoxContainer/Process" to="." method="_on_process_pressed"]
