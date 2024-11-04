@@ -43,6 +43,7 @@ func _select_directory(path: String) -> void:
 
 
 func log_textbox(text: String, new_line: bool = true) -> void:
+    print(text)
     $VBoxContainer/LoggingPanel/LoggingLabel.text += text
     if new_line:
         $VBoxContainer/LoggingPanel/LoggingLabel.text += "\n"
@@ -75,12 +76,17 @@ func _on_process_pressed() -> void:
                 # Heroes/Tags/HiddenTags
                 # Localization.Title.Text
                 card_data["name"] = raw_card["Localization"]["Title"]["Text"]
-                if card_data["name"] == "Dinonysus":
-                    var i:=0
+
+                var tooltips: Array[String] = []
+                for tooltip: Dictionary in raw_card["Localization"]["Tooltips"]:
+                    tooltips.push_back(tooltip["Content"]["Text"])
+                card_data["tooltips"] = tooltips
+
                 var abilities: Array[String] = []
                 for ability: Dictionary in raw_card["Abilities"].values():
                     abilities.push_back(_parse_ability(ability))
                 card_data["abilities"] = abilities
+
 
             _:
                 if !unhandled_types.has(type):
@@ -98,13 +104,17 @@ func _on_process_pressed() -> void:
                     var start_idx := ability.find("{")
                     var end_idx := ability.find("}")
                     var id := ability.substr(start_idx + 1, end_idx - start_idx - 1)
-                    ability = ability.substr(0, start_idx) + "[" + all_card_data[id]["name"] + "]" + ability.substr(end_idx + 1)
+                    var name: String
+                    if all_card_data.has(id):
+                        name = all_card_data[id]["name"]
+                    else:
+                        name = "Unknown"
+                    ability = ability.substr(0, start_idx) + "[" + name + "]" + ability.substr(end_idx + 1)
                 card["abilities"][i] = ability
             print(str(card))
 
 
     log_textbox("Unsupported card types - " + str(unhandled_types))
-    print("Unsupported card types - " + str(unhandled_types))
 
 func _parse_ability(ability: Dictionary) -> String:
     var desc := str(ability["Id"]) + ": "
@@ -131,6 +141,7 @@ func _parse_ability(ability: Dictionary) -> String:
     if desc.contains("[Anywhere] On Use,"):
         # On use only triggers on the board, so the anywhere flag is irrelevant
         desc = desc.replace("[Anywhere] ", "")
+    desc = desc.strip_edges()
 
     return desc
 
@@ -551,6 +562,7 @@ func _parse_trigger(trigger: Dictionary) -> String:
 
 
 func _parse_action(action: Dictionary) -> String:
+    # TODO conditions, e.g. freeze small
     match action["$type"]:
         "TActionPlayerDamage":
             return "Damage #DamageAmount#"
@@ -558,20 +570,155 @@ func _parse_action(action: Dictionary) -> String:
         "TActionPlayerHeal":
             return "Heal #HealAmount#"
 
+        "TActionPlayerShieldApply":
+            return "Shield #ShieldApplyAmount#"
+
+        "TActionPlayerBurnApply":
+            return "Burn #BurnApplyAmount#"
+
+        "TActionPlayerPoisonApply":
+            return "Poison #PoisonApplyAmount#"
+
+        "TActionPlayerBurnRemove":
+            return "Remove Burn #BurnRemoveAmount#"
+
+        "TActionPlayerPoisonRemove":
+            return "Remove Poison #PoisonRemoveAmount#"
+
+        "TActionCardHaste":
+            return "Haste #HasteTargets# Items #HasteAmount#"
+
+        "TActionCardCharge":
+            return "Charge #ChargeTargets# Items #ChargeAmount#"
+
         "TActionCardSlow":
             return "Slow #SlowTargets# Items #SlowAmount#"
 
-        "TActionCardModifyAttribute":
+        "TActionCardFreeze":
+            return "Freeze #FreezeTargets# Items #FreezeAmount#"
+
+        "TActionPlayerJoyApply":
+            return "Apply #JoyApplyAmount# Joy"
+
+        "TActionCardReload":
+            if action["Target"]["Conditions"] == null:
+                # Bugged card?
+                pass
+            else:
+                return "Reload " + _parse_condition(action["Target"]["Conditions"])
+
+        "TActionCardDisable":
+            if action["Target"]["Conditions"] == null:
+                return "Destroy An Item"
+            else:
+                return "Destroy " + _parse_condition(action["Target"]["Conditions"])
+
+        "TActionCardUpgrade":
+            if action["Target"]["$type"] == "TTargetCardXMost":
+                if action["Target"]["TargetMode"] == "LeftMostCard":
+                    return "Upgrade Left-Most Card"
+                else:
+                    log_textbox("Unhandled action upgrade - " + str(action))
+            elif action["Target"]["$type"] == "TTargetCardSection":
+                return "Upgrade " + _parse_condition(action["Target"]["Conditions"])
+            elif action["Target"]["$type"] == "TTargetCardSelf":
+                return "Upgrade This"
+            elif action["Target"]["$type"] == "TTargetCardRandom":
+                return "Upgrade Random"
+            else:
+                log_textbox("Unhandled action upgrade - " + str(action))
+
+        "TActionCardForceUse":
+            var str := "Use "
+            if action["Target"]["$type"] == "TTargetCardSection":
+                "All Other Items "
+            elif action["Target"]["$type"] == "TTargetCardSelf":
+                "This "
+            elif action["Target"]["$type"] != "TTargetCardRandom" or action["Target"]["TargetSection"] != "SelfHand":
+                # 3D printer can self use
+                log_textbox("Unhandled action force state - " + str(action))
+            else:
+                str += "Item "
+                if action["Target"]["Conditions"] != null:
+                    str += _parse_condition(action["Target"]["Conditions"])
+            return str
+
+        "TActionCardModifyAttribute", "TActionPlayerModifyAttribute":
             var amount: String
             if action["Value"]["$type"] == "TReferenceValueCardAttribute":
                 amount = "#" + action["Value"]["AttributeType"] + "#"
+            elif action["Value"]["$type"] == "TFixedValue":
+                amount = str(action["Value"]["Value"])
+            elif action["Value"]["$type"] == "TRangeValue":
+                amount = str(action["Value"]["MinValue"]) + "-" + str(action["Value"]["MaxValue"])
+            elif action["Value"]["$type"] == "TReferenceValuePlayerAttribute":
+                amount = "#Player" + action["Value"]["AttributeType"] + "#"
+            elif action["Value"]["$type"] == "TReferenceValuePlayerAttributeChange":
+                # No idea, balloon bot
+                pass
             else:
                 log_textbox("Unhandled action attribute value - " + str(action))
 
             if action["Operation"] == "Add":
-                return "+" + amount + " #" + action["AttributeType"] + "Name#"
+                return "+" + amount + " $" + action["AttributeType"] + "Name$"
+            elif action["Operation"] == "Subtract":
+                return "-" + amount + " $" + action["AttributeType"] + "Name$"
+            elif action["Operation"] == "Multiply":
+                return "x" + amount + " $" + action["AttributeType"] + "Name$"
             else:
                 log_textbox("Unhandled action attribute modification - " + str(action))
+
+        "TActionGameSpawnCards", "TActionGameDealCards":
+            var amount: String
+            if action["SpawnContext"]["Limit"]["$type"] == "TFixedValue":
+                amount = str(action["SpawnContext"]["Limit"]["Value"])
+            elif action["SpawnContext"]["Limit"]["$type"] == "TReferenceValueCardAttribute":
+                amount = "#" + action["SpawnContext"]["Limit"]["AttributeType"] + "#"
+            else:
+                log_textbox("Unhandled action spawn limit - " + str(action))
+
+            var str := "Spawn " + amount + " "
+            for j: int in range(action["SpawnContext"]["Groups"].size()):
+                if j > 0:
+                    str += "+ "
+                var group: Dictionary = action["SpawnContext"]["Groups"][j]
+                if group["Prerequisites"] != null:
+                     log_textbox("Unhandled action spawn setting - " + str(action))
+                for filter: Dictionary in group["Filters"]:
+                    if filter["$type"] == "TSpawnFilterIdList":
+                        str += "("
+                        for i: int in range(filter["Ids"].size()):
+                            if i > 0:
+                                str += "| "
+                            str += "{" + filter["Ids"][i] + "} "
+                        str = str.substr(0, str.length() - 1) + ") "
+                    elif filter["$type"] == "TSpawnFilterQuery":
+                        # TODO
+                        pass
+                    else:
+                        log_textbox("Unhandled action spawn filter - " + str(action))
+
+            if action["SpawnContext"]["Behaviors"] != null:
+                str += "("
+                for i: int in range(action["SpawnContext"]["Behaviors"].size()):
+                    if i > 0:
+                        str += "| "
+                    var behavior: Dictionary = action["SpawnContext"]["Behaviors"][i]
+                    if behavior["$type"] == "TSpawnBehaviorAllowDuplicates":
+                        if behavior["AllowDuplicates"]:
+                            str += "dupes ok "
+                        else:
+                            str += "no dupes "
+                    elif behavior["$type"] == "TSpawnBehaviorIgnoreHero":
+                        if behavior["IgnoreHero"]:
+                            str += "any hero "
+                        else:
+                            str += "this hero "
+                    else:
+                        log_textbox("Unhandled action spawn behavior - " + str(action))
+                str = str.substr(0, str.length() - 1) + ") "
+
+            return str
 
         _:
             log_textbox("Unhandled action type - " + str(action))
